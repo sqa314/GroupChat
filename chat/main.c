@@ -4,6 +4,7 @@
 #include <string.h>
 #include <Windows.h>
 #include <process.h>
+#include <time.h>
 
 #define BUF_SIZE 100
 #define MAX_CLNT 256
@@ -18,8 +19,8 @@ unsigned WINAPI server(void* arg);
 
 unsigned WINAPI HandleClient(void* arg);
 unsigned WINAPI servSend();
-void SendClient(char* name, char* msg, size_t len);
-void SendSecret(char* name, char* whisper, char* msg, size_t len);
+void SendClient(char* name, char* msg, unsigned int len);
+void SendSecret(char* name, char* whisper, char* msg, unsigned int len);
 
 unsigned WINAPI SendMsg(void* arg);
 unsigned WINAPI RecvMsg(void* arg);
@@ -32,7 +33,9 @@ char* clientNames[50];
 HANDLE hMutex;
 char name[50] = "[DEFAULT]";
 char msg[200];
-size_t room;
+unsigned int room;
+
+clock_t ping;
 
 #pragma comment(lib,"ws2_32")
 
@@ -67,7 +70,7 @@ unsigned WINAPI server(void* arg)
 	WSADATA wsaData;
 	SOCKET serverSock, clientSock;
 	SOCKADDR_IN serverAddr, clientAddr;
-	size_t clientAddrSize;
+	unsigned int clientAddrSize;
 	HANDLE hThread;
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 		ErrorHandling("WSAStartup() error!");
@@ -127,7 +130,7 @@ unsigned WINAPI HandleClient(void* arg)
 		for (i = 0; i < clientCount; ++i)
 			if (clientNames[i] && !strcmp(cName, clientNames[i]))
 				break;
-		if (i != clientCount || !strcmp(cName, "exit") || !strcmp(cName, "refresh") || !strcmp(cName, "host"))
+		if (i != clientCount || !strcmp(cName, "exit") || !strcmp(cName, "refresh") || !strcmp(cName, "host") ||!strcmp(cName,"ping"))
 			send(clientSock, "", 1, 0);
 		else
 			u = 1;
@@ -174,6 +177,8 @@ unsigned WINAPI HandleClient(void* arg)
 				send(clientSock, clientNames[i], strlen(clientNames[i]), 0);
 			}
 		}
+		else if (!strcmp(msg, "/ping\n"))
+			send(clientSock, msg, strlen(msg), 0);
 		else
 		{
 			i = strcspn(msg, " ");
@@ -204,10 +209,10 @@ B:
 	return 0;
 }
 
-void SendClient(char* cName, char* msg, size_t len)
+void SendClient(char* cName, char* msg, unsigned int len)
 {
 	unsigned int i;
-	size_t nameLen = strlen(cName);
+	unsigned int nameLen = strlen(cName);
 	char nameMsg[255];
 	sprintf(nameMsg, "[%s] : %s", cName, msg);
 	nameMsg[nameLen + len + 5] = 0;
@@ -220,10 +225,10 @@ void SendClient(char* cName, char* msg, size_t len)
 	ReleaseMutex(hMutex);
 }
 
-void SendSecret(char* cName, char* whisper, char* msg, size_t len)
+void SendSecret(char* cName, char* whisper, char* msg, unsigned int len)
 {
 	unsigned int i;
-	size_t nameLen = strlen(cName);
+	unsigned int nameLen = strlen(cName);
 	char nameMsg[255];
 	sprintf(nameMsg, ">[%s] : %s", cName, msg);
 	nameMsg[nameLen + len + 6] = 0;
@@ -270,7 +275,9 @@ unsigned WINAPI servSend()
 		msg[strLen = strlen(msg)] = 0;
 		if (msg[0] == '\n')
 			continue;
-		if (!strcmp(msg, "/refresh\n"))
+		if (msg[0] != '/')
+			SendClient("host", msg, strLen);
+		else if (!strcmp(msg, "/refresh\n"))
 		{
 			system("cls");
 			printf("-----------------------------------------------\n");
@@ -291,8 +298,6 @@ unsigned WINAPI servSend()
 			printf("-----------------------------------------------\n");
 			continue;
 		}
-		if (msg[0] != '/')
-			SendClient("host", msg, strLen);
 		else
 		{
 			i = strcspn(msg, " ");
@@ -316,7 +321,7 @@ unsigned WINAPI client(void* arg)
 	SOCKADDR_IN serverAddr;
 	HANDLE sendThread, recvThread;
 	size_t strLen;
-	size_t clientNum;
+	unsigned int clientNum;
 	char friend[50];
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 		ErrorHandling("WSAStartup() error!");
@@ -416,6 +421,10 @@ unsigned WINAPI SendMsg(void* arg)
 			send(sock, message, strlen(message), 0);
 			return 0;
 		}
+		if (!strcmp(message, "/ping\n"))
+		{
+			ping = clock();
+		}
 		if (!strcmp(message, "/exit\n"))
 		{
 			closesocket(sock);
@@ -436,6 +445,8 @@ unsigned WINAPI RecvMsg(void* arg)
 		message[strLen] = 0;
 		if (message[0] == '>')
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 14);
+		else if (!strcmp(message,"/ping\n"))
+			sprintf(message, "지연시간 %dms\n",clock()-ping);
 		fputs(message, stdout);
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 15);
 	}
